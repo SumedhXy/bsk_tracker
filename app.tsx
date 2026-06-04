@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 /* ─────────────────────────── DRILL DATA WITH INTENSITY ─────────────────────────── */
 // Each drill has: name, sets, reps (or duration in sec), intensity (1-3), tip
-const SCHEDULE = [
+const SCHEDULE: Day[] = [
   {
     id:"mon", label:"Monday", short:"MON", venue:"Garden", venueIcon:"🌳",
     theme:"Ball Control + Conditioning", color:"#F97316", accent:"#FED7AA",
@@ -193,7 +193,7 @@ const SCHEDULE = [
     ]},
 ];
 
-const PHASES = {
+const PHASES: Record<PhaseKey, Phase> = {
   1:{ label:"Phase 1", period:"June", target:11, dribbles:4, color:"#F97316", bg:"#431407" },
   2:{ label:"Phase 2", period:"July+", target:21, dribbles:3, color:"#EF4444", bg:"#450A0A" },
 };
@@ -214,19 +214,111 @@ const CATEGORY_COLORS = {
   CONDITIONING:"#EF4444", STRENGTH:"#F59E0B", RECOVERY:"#06B6D4", IQ:"#3B82F6"
 };
 
+type Category = keyof typeof CATEGORY_COLORS;
+type Drill = {
+  name: string;
+  sets: number;
+  reps: string;
+  intensity: 1 | 2 | 3;
+  tip: string;
+  _sectionId?: string;
+};
+type Section = {
+  id: string;
+  title: string;
+  duration: number | null;
+  icon: string;
+  category: Category;
+  drills: Drill[];
+  note?: string;
+  target?: number;
+};
+type Day = {
+  id: string;
+  label: string;
+  short: string;
+  venue: string;
+  venueIcon: string;
+  theme: string;
+  color: string;
+  accent: string;
+  sections: Section[];
+  hasGame?: boolean;
+  isRecovery?: boolean;
+  isBigDay?: boolean;
+};
+type PhaseKey = 1 | 2;
+type Phase = { label: string; period: string; target: number; dribbles: number; color: string; bg: string; };
+
+type CompletedDrills = Record<string, boolean>;
+type CompletedGoals = Record<string, boolean>;
+
+type ActiveDrill = Drill & { _sectionId?: string };
+
+type PlayEvent = "make" | "miss" | "bad" | "forced";
+
+type LogEntry = { type: PlayEvent; label: string; score: number; id: number };
+
+type ActiveDrillScreenProps = {
+  drill: ActiveDrill;
+  sectionColor: string;
+  onClose: () => void;
+  onComplete: () => void;
+};
+
+type DrillCardProps = {
+  drill: Drill;
+  sectionId: string;
+  completed: CompletedDrills;
+  onToggle: (key: string) => void;
+  color: string;
+  onStart: (drill: Drill) => void;
+  index: number;
+};
+
+type SectionCardProps = {
+  section: Section;
+  completedDrills: CompletedDrills;
+  onToggle: (key: string) => void;
+  color: string;
+  onStartDrill: (drill: ActiveDrill) => void;
+};
+
+type TodayTabProps = {
+  completedDrills: CompletedDrills;
+  onToggle: (key: string) => void;
+  selectedDay: number;
+  onGoToGame: () => void;
+};
+
+type GameTrackerProps = {
+  phase: PhaseKey;
+  onPhaseChange: (phase: PhaseKey) => void;
+};
+
+type WeekOverviewProps = {
+  completedDrills: CompletedDrills;
+  onSelectDay: (idx: number) => void;
+};
+
+type IQTabProps = {
+  completedGoals: CompletedGoals;
+  onToggleGoal: (index: number) => void;
+};
+
 /* ─────────────────────────── HELPERS ─────────────────────────── */
 function getCurrentDayIdx() {
   const d = new Date().getDay();
   return { 1:0, 2:1, 3:2, 4:3, 5:4, 6:5 }[d] ?? 0;
 }
 function getCurrentPhase() { return new Date().getMonth() <= 5 ? 1 : 2; }
-function pad(n) { return String(n).padStart(2,"0"); }
+function pad(n: number) { return String(n).padStart(2,"0"); }
 
 const INTENSITY_LABELS = ["", "Easy", "Moderate", "Hard"];
 const INTENSITY_COLORS = ["", "#10B981", "#F97316", "#EF4444"];
 const INTENSITY_DOTS = ["", 1, 2, 3];
 
-function IntensityBadge({ level }) {
+function IntensityBadge({ level }: { level: number }) {
   return (
     <div style={{ display:"flex", alignItems:"center", gap:3 }}>
       {[1,2,3].map(i => (
@@ -261,7 +353,7 @@ function useTimer(totalSec: number) {
 }
 
 /* ─────────────────────────── ACTIVE DRILL SCREEN ─────────────────────────── */
-function ActiveDrillScreen({ drill, sectionColor, onClose, onComplete }) {
+function ActiveDrillScreen({ drill, sectionColor, onClose, onComplete }: ActiveDrillScreenProps) {
   const [currentSet, setCurrentSet] = useState(1);
   const [setsDone, setSetsDone] = useState(0);
   const totalSets = drill.sets;
@@ -372,7 +464,7 @@ function ActiveDrillScreen({ drill, sectionColor, onClose, onComplete }) {
 }
 
 /* ─────────────────────────── DRILL CARD ─────────────────────────── */
-function DrillCard({ drill, sectionId, completed, onToggle, color, onStart, index }) {
+function DrillCard({ drill, sectionId, completed, onToggle, color, onStart, index }: DrillCardProps) {
   const key = `${sectionId}::${drill.name}`;
   const checked = !!completed[key];
 
@@ -426,7 +518,7 @@ function DrillCard({ drill, sectionId, completed, onToggle, color, onStart, inde
 }
 
 /* ─────────────────────────── SECTION CARD ─────────────────────────── */
-function SectionCard({ section, completedDrills, onToggle, color, onStartDrill }) {
+function SectionCard({ section, completedDrills, onToggle, color, onStartDrill }: SectionCardProps) {
   const [open, setOpen] = useState(true);
   const totalSec = (section.duration || 0) * 60;
   const { sec, running, start, pause, reset } = useTimer(totalSec);
@@ -459,7 +551,7 @@ function SectionCard({ section, completedDrills, onToggle, color, onStartDrill }
           </div>
         </div>
         {/* Timer */}
-        {section.duration > 0 && (
+        {section.duration !== null && section.duration > 0 && (
           <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }} onClick={e => e.stopPropagation()}>
             <span style={{ fontSize:14, fontFamily:"monospace", fontWeight:"bold", color: sec===0 ? "#10B981" : running ? color : "#9CA3AF", minWidth:40, textAlign:"right" }}>
               {pad(Math.floor(sec/60))}:{pad(sec%60)}
@@ -509,8 +601,8 @@ function SectionCard({ section, completedDrills, onToggle, color, onStartDrill }
 }
 
 /* ─────────────────────────── TODAY TAB ─────────────────────────── */
-function TodayTab({ completedDrills, onToggle, selectedDay, onGoToGame }) {
-  const [activeDrill, setActiveDrill] = useState<any>(null);
+function TodayTab({ completedDrills, onToggle, selectedDay, onGoToGame }: TodayTabProps) {
+  const [activeDrill, setActiveDrill] = useState<ActiveDrill | null>(null);
   const [activeDrillColor, setActiveDrillColor] = useState("#F97316");
   const day = SCHEDULE[selectedDay];
   const allKeys = day.sections.flatMap(s => s.drills.map(d => `${s.id}::${d.name}`));
@@ -519,7 +611,7 @@ function TodayTab({ completedDrills, onToggle, selectedDay, onGoToGame }) {
   const totalDrills = allKeys.length;
   const totalSets = day.sections.flatMap(s => s.drills).reduce((a,d) => a + d.sets, 0);
 
-  const handleStartDrill = (drill, color) => {
+  const handleStartDrill = (drill: ActiveDrill, color: string) => {
     setActiveDrillColor(color || day.color);
     setActiveDrill(drill);
   };
@@ -619,14 +711,14 @@ function TodayTab({ completedDrills, onToggle, selectedDay, onGoToGame }) {
 }
 
 /* ─────────────────────────── GAME TRACKER ─────────────────────────── */
-function GameTracker({ phase, onPhaseChange }) {
+function GameTracker({ phase, onPhaseChange }: GameTrackerProps) {
   const ph = PHASES[phase];
   const [score, setScore] = useState(0);
   const [possessions, setPossessions] = useState(0);
   const [stats, setStats] = useState({ makes:0, misses:0, badPickups:0, forced:0 });
-  const [log, setLog] = useState([]);
+  const [log, setLog] = useState<LogEntry[]>([]);
 
-  const event = (type) => {
+  const event = (type: PlayEvent) => {
     const delta = type === "make" ? 1 : -1;
     const ns = score + delta;
     setScore(ns);
@@ -637,8 +729,8 @@ function GameTracker({ phase, onPhaseChange }) {
       badPickups: type==="bad" ? s.badPickups+1 : s.badPickups,
       forced: type==="forced" ? s.forced+1 : s.forced,
     }));
-    const labels = { make:"✅ Make", miss:"❌ Miss", bad:"⚠️ Bad Pickup", forced:"🚫 Forced" };
-    setLog(l => [{ type, label:labels[type], score:ns, id:Date.now() }, ...l.slice(0,9)]);
+    const labels: Record<PlayEvent, string> = { make:"✅ Make", miss:"❌ Miss", bad:"⚠️ Bad Pickup", forced:"🚫 Forced" };
+    setLog(l => [{ type, label: labels[type], score:ns, id:Date.now() }, ...l.slice(0,9)]);
   };
 
   const reset = () => { setScore(0); setPossessions(0); setStats({ makes:0, misses:0, badPickups:0, forced:0 }); setLog([]); };
@@ -649,7 +741,7 @@ function GameTracker({ phase, onPhaseChange }) {
     <div style={{ padding:"0 14px 100px" }}>
       {/* Phase */}
       <div style={{ display:"flex", gap:8, marginBottom:16 }}>
-        {[1,2].map(p => {
+        {([1,2] as PhaseKey[]).map(p => {
           const pp = PHASES[p];
           return (
             <button key={p} onClick={() => { onPhaseChange(p); reset(); }} style={{
@@ -783,7 +875,7 @@ function GameTracker({ phase, onPhaseChange }) {
 }
 
 /* ─────────────────────────── WEEK OVERVIEW ─────────────────────────── */
-function WeekOverview({ completedDrills, onSelectDay }) {
+function WeekOverview({ completedDrills, onSelectDay }: WeekOverviewProps) {
   const todayIdx = getCurrentDayIdx();
   return (
     <div style={{ padding:"0 14px 100px" }}>
@@ -854,7 +946,7 @@ function WeekOverview({ completedDrills, onSelectDay }) {
 }
 
 /* ─────────────────────────── IQ TAB ─────────────────────────── */
-function IQTab({ completedGoals, onToggleGoal }) {
+function IQTab({ completedGoals, onToggleGoal }: IQTabProps) {
   const done = IQ_GOALS.filter((_,i) => completedGoals[i]).length;
   return (
     <div style={{ padding:"0 14px 100px" }}>
@@ -954,20 +1046,20 @@ export default function App() {
   const todayIdx = getCurrentDayIdx();
   const [tab, setTab] = useState("today");
   const [selectedDay, setSelectedDay] = useState(todayIdx);
-  const [phase, setPhase] = useState(getCurrentPhase());
-  const [completedDrills, setCompletedDrills] = useState(() => {
+  const [phase, setPhase] = useState<PhaseKey>(getCurrentPhase());
+  const [completedDrills, setCompletedDrills] = useState<CompletedDrills>(() => {
     try { return JSON.parse(localStorage.getItem("bball_drills2") || "{}"); } catch { return {}; }
   });
-  const [completedGoals, setCompletedGoals] = useState(() => {
+  const [completedGoals, setCompletedGoals] = useState<CompletedGoals>(() => {
     try { return JSON.parse(localStorage.getItem("bball_goals2") || "{}"); } catch { return {}; }
   });
 
   useEffect(() => { localStorage.setItem("bball_drills2", JSON.stringify(completedDrills)); }, [completedDrills]);
   useEffect(() => { localStorage.setItem("bball_goals2", JSON.stringify(completedGoals)); }, [completedGoals]);
 
-  const toggleDrill = useCallback((key) => setCompletedDrills(prev => ({ ...prev, [key]: !prev[key] })), []);
-  const toggleGoal = useCallback((i) => setCompletedGoals(prev => ({ ...prev, [i]: !prev[i] })), []);
-  const handleSelectDay = (idx) => { setSelectedDay(idx); setTab("today"); };
+  const toggleDrill = useCallback((key: string) => setCompletedDrills(prev => ({ ...prev, [key]: !prev[key] })), []);
+  const toggleGoal = useCallback((i: number) => setCompletedGoals(prev => ({ ...prev, [i]: !prev[i] })), []);
+  const handleSelectDay = (idx: number) => { setSelectedDay(idx); setTab("today"); };
 
   const day = SCHEDULE[selectedDay];
 
